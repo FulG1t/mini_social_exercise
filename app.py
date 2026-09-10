@@ -906,8 +906,31 @@ def moderate_content(content):
             password: admin
     Then, navigate to the /admin endpoint. (http://localhost:8080/admin)
     """
+    codes = open('censorship.key', 'r')
+    key = codes.readline()
+    f = Fernet(key)
 
     moderated_content = content
+    with open('censorship.dat', 'r') as file: 
+        censor = file.read()
+        censor = f.decrypt(censor)
+        my_json = censor.decode('utf8')
+        data = json.loads(my_json)
+        tier1_severe_violations = data['categories']['tier1_severe_violations']["words"]
+        tier2_spam_scams = data['categories']['tier2_spam_scams']
+        tier3_mild_profanity = data['categories']['tier3_mild_profanity']
+
+    #Tier1words
+    lowercase_content = content.lower()  
+    for word in tier1_severe_violations:
+        if word in lowercase_content:
+            return "asd", 5.0
+    #rules: 
+    '''
+    1. Whole word search vs Tier 1 words
+    2. Whole-phrase search vs Tier 1 phrases
+    3. 
+    '''
     score = 0
     
     return moderated_content, score
