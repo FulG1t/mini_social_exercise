@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, g
+from flask import Flask, render_template, request, redirect, url_for, session, flash, g, jsonify, abort
 from werkzeug.security import generate_password_hash, check_password_hash
 from cryptography.fernet import Fernet
 import collections
@@ -231,6 +231,19 @@ def add_post():
     # Redirect back to the main feed to see the new post
     return redirect(url_for('feed'))
     
+@app.route('/posts/check', methods=['POST'])
+def check_post():
+    if not session.get('user_id'):
+        return jsonify({'error': 'not logged in'}), 401
+
+    data = request.get_json(silent=True) or {}
+    content = data.get('content', '')
+
+    moderated, _ = moderate_content(content)
+    return jsonify({
+        'censored': moderated != content,
+        'preview': moderated
+    })
     
 @app.route('/posts/<int:post_id>/delete', methods=['POST'])
 def delete_post(post_id):
@@ -883,10 +896,28 @@ def user_risk_analysis(user_id):
             password: admin
         Then, navigate to the /admin endpoint. (http://localhost:8080/admin)
     """
-    
-    score = 0
+    user = query_db('SELECT profile, created_at FROM users WHERE id = ?', (user_id,), one=True)
+    if not user:
+        return 0.0
+    posts = query_db('SELECT content FROM posts WHERE user_id = ?', (user_id,))
+    comments = query_db('SELECT content FROM comments WHERE user_id = ?', (user_id,))
 
-    return score;
+    profile_score = moderate_content(user['profile'] or '')[1]
+
+    post_scores = [moderate_content(p['content'] or '')[1] for p in posts]
+    average_post_score = sum(post_scores) / len(post_scores) if post_scores else 0.0
+
+    comment_scores = [moderate_content(c['content'] or '')[1] for c in comments]
+    average_comment_score = sum(comment_scores) / len(comment_scores) if comment_scores else 0.0
+    
+    content_risk_score = (profile_score * 1) + (average_post_score * 3) + (average_comment_score * 1)
+    age_days = (datetime.now()- user['created_at']).days
+    if age_days < 7:
+        content_risk_score *= 1.5
+    elif age_days < 30:
+        content_risk_score *= 1.2
+
+    return min(content_risk_score, 5.0)
 
     
 # Assignment 2.1
@@ -917,22 +948,39 @@ def moderate_content(content):
         my_json = censor.decode('utf8')
         data = json.loads(my_json)
         tier1_severe_violations = data['categories']['tier1_severe_violations']["words"]
-        tier2_spam_scams = data['categories']['tier2_spam_scams']
-        tier3_mild_profanity = data['categories']['tier3_mild_profanity']
+        tier2_spam_scams = data['categories']['tier2_spam_scams']["phrases"]
+        tier3_mild_profanity = data['categories']['tier3_mild_profanity']["words"]
 
     #Tier1words
     lowercase_content = content.lower()  
-    for word in tier1_severe_violations:
-        if word in lowercase_content:
-            return "asd", 5.0
-    #rules: 
-    '''
-    1. Whole word search vs Tier 1 words
-    2. Whole-phrase search vs Tier 1 phrases
-    3. 
-    '''
     score = 0
-    
+    if any(word in lowercase_content for word in tier1_severe_violations):
+        return "[content removed due to severe violation]", 5.0
+    if any(phrase in lowercase_content for phrase in tier2_spam_scams):
+        return "[content removed due to spam/scam policy]", 5.0
+    for word in tier3_mild_profanity:
+        if word in lowercase_content:
+            moderated_content = re.sub(word, "*"*len(word), moderated_content, flags=re.IGNORECASE)        
+            score += 2
+    # Check links
+    pattern = re.compile(
+    r'\b(?:https?://)?'
+    r'(?:[a-zA-Z0-9-]+(?:\.|\[\.\]|\(\.\)))+'
+    r'[a-zA-Z]{2,24}'
+    r'(?:/[^\s,;)\]"\']*)?',
+    re.IGNORECASE
+    )
+    links = pattern.findall(moderated_content)
+    score += 2 * len(links)
+    moderated_content = pattern.sub('[link removed]', moderated_content)
+
+    # Check Uppercase to Lowercase ratio
+    letters =  [c for c in moderated_content if c.isalpha()]
+    amount_letters = len(letters)
+    if(amount_letters > 15):
+        upper_ratio = sum(1 for c in letters if c.isupper()) / amount_letters
+        if(upper_ratio > 0.7):
+            score += 0.5
     return moderated_content, score
 
 # Coding Assignment #3

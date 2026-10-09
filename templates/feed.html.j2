@@ -200,4 +200,37 @@
       Next &raquo;
     </a>
   </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const form = document.querySelector('form[action$="/posts/new"]');
+  if (!form) return;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const textarea = form.querySelector('[name="content"]');
+
+    try {
+      const res = await fetch('{{ url_for("check_post") }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: textarea.value })
+      });
+      const result = await res.json();
+
+      if (result.censored) {
+        const ok = confirm(
+          'Parts of your post will be censored:\n\n' +
+          result.preview +
+          '\n\nDo you still want to post it?'
+        );
+        if (!ok) return; 
+      }
+    } catch (err) {
+      console.error('Moderation check failed', err);y
+    }
+    form.submit();
+  });
+});
+</script>
 {% endblock %}
