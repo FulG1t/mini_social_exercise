@@ -685,6 +685,44 @@ def unfollow_user(user_id):
     # Redirect back to the page the user came from
     return redirect(request.referrer or url_for('feed'))
 
+@app.route('/u/<int:user_id>/tag', methods=['POST'])
+def change_tag(user_id):
+    """Allows a logged-in user to set (or clear) their own personalized tag."""
+    TAG_MAX_LENGTH = 30
+    current_user_id = session.get('user_id')
+
+    if not current_user_id:
+        flash("You must be logged in to change your tag.", "danger")
+        return redirect(url_for('login'))
+
+    if current_user_id != user_id:
+        flash("You can only change your own tag.", "danger")
+        return redirect(request.referrer or url_for('feed'))
+
+    new_tag = ' '.join(request.form.get('tag', '').split())
+
+    if len(new_tag) > TAG_MAX_LENGTH:
+        flash(f"Tags can be at most {TAG_MAX_LENGTH} characters long.", "warning")
+        return redirect(request.referrer or url_for('feed'))
+
+    if new_tag:
+        moderated_tag, _ = moderate_content(new_tag)
+        if moderated_tag != new_tag:
+            flash("That tag isn't allowed. Please choose a different one.", "danger")
+            return redirect(request.referrer or url_for('feed'))
+
+    db = get_db()
+    db.execute('UPDATE users SET tag = ? WHERE id = ?', (new_tag, user_id))
+    db.commit()
+
+    if new_tag:
+        flash(f"Your tag is now \"{new_tag}\".", "success")
+    else:
+        flash("Your tag has been cleared.", "info")
+
+    return redirect(request.referrer or url_for('feed'))
+
+
 @app.route('/admin')
 def admin_dashboard():
     """Displays the admin dashboard with users, posts, and comments, sorted by risk."""
@@ -1008,6 +1046,35 @@ def recommend(user_id, filter_following):
     recommended_posts = {} 
 
     return recommended_posts;
+
+ACTIVITY_TYPES = ('posts', 'comments', 'reactions_given', 'reactions_received')
+
+def get_activity_stats():
+    """Returns one dict per user with raw activity counts and a weighted 'score'."""
+    rows = query_db("""
+        SELECT u.id, u.username,
+          (SELECT COUNT(*) FROM posts p WHERE p.user_id = u.id)        AS posts,
+          (SELECT COUNT(*) FROM comments c WHERE c.user_id = u.id)     AS comments,
+          (SELECT COUNT(*) FROM reactions r WHERE r.user_id = u.id)    AS reactions_given,
+          (SELECT COUNT(*) FROM reactions r
+             JOIN posts p ON r.post_id = p.id WHERE p.user_id = u.id)  AS reactions_received
+        FROM users u
+    """)
+
+    stats = []
+    for row in rows or []:
+        d = dict(row)
+        d['score'] = sum(d[key] for key in ACTIVITY_TYPES)
+        stats.append(d)
+    return stats
+
+
+@app.template_global()
+def top_users():
+    """Returns the n most active users for the sidebar leaderboard."""
+    stats = get_activity_stats()
+    stats.sort(key=lambda s: (-s['score'], s['username']))
+    return stats[:5]
 
 if __name__ == '__main__':
     app.run(debug=True, port=8080)

@@ -5,7 +5,11 @@
 <div class="align-center text-center">
   <img src="{{ url_for('static', filename='icon.png') }}" alt="Logo" style="height: 64px;" class="mb-4">
 </div>
-
+<div class="col-md-3 mb-4">
+  <div class="position-sticky" style="top: 1rem;">
+    {% include "leaderboard.html.j2" %}
+  </div>
+</div>
 {% if session.get('user_id') %}
 <div class="col-md-8 mx-auto mb-4">
   <div class="card shadow-sm">
@@ -230,6 +234,38 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('Moderation check failed', err);y
     }
     form.submit();
+  });
+});
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const form = document.querySelector('form[action$="/posts/new"]');
+  if (!form) return;
+
+  const textarea = form.querySelector('[name="content"]');
+  const DRAFT_KEY = 'draft_post_{{ session.get("user_id", "anon") }}';
+
+  try {
+    const saved = localStorage.getItem(DRAFT_KEY);
+    if (saved && !textarea.value) textarea.value = saved;
+  } catch (err) {}
+
+  let timer;
+  textarea.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      try {
+        if (textarea.value.trim()) {
+          localStorage.setItem(DRAFT_KEY, textarea.value);
+        } else {
+          localStorage.removeItem(DRAFT_KEY);
+        }
+      } catch (err) {}
+    }, 400);
+  });
+  form.addEventListener('formdata', () => {
+    clearTimeout(timer);
+    try { localStorage.removeItem(DRAFT_KEY); } catch (err) {}
   });
 });
 </script>

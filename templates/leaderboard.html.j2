@@ -1,0 +1,18 @@
+<div class="card shadow-sm">
+  <div class="card-body p-2">
+    <h6 class="card-title mb-2">Most active</h6>
+    {% set leaders = top_users() %}
+    {% if leaders %}
+    <ol class="ps-3 mb-0 small">
+      {% for s in leaders %}
+      <li>
+        <a href="{{ url_for('user_profile', username=s.username) }}">{{ s.username }}</a>
+        <span class="text-muted float-end">{{ s.score }}</span>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <p class="small text-muted mb-0">No activity yet.</p>
+    {% endif %}
+  </div>
+</div>
