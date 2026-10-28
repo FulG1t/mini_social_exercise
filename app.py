@@ -6,7 +6,7 @@ import json
 import sqlite3
 import hashlib
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 app = Flask(__name__)
 app.secret_key = '123456789' 
@@ -906,6 +906,20 @@ def admin_delete_comment(comment_id):
 @app.route('/rules')
 def rules():
     return render_template('rules.html.j2')
+
+@app.template_global()
+def is_newcomer(username):
+    """True if this user joined less than 7 days ago."""
+    # Load the set of newcomers once per request, not once per username
+    if 'newcomers' not in g:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        rows = query_db(
+            'SELECT username FROM users WHERE created_at >= ?',
+            (cutoff.strftime('%Y-%m-%d %H:%M:%S'),)
+        ) or []
+        g.newcomers = {r['username'] for r in rows}
+    return username in g.newcomers
+
 
 @app.template_global()
 def loop_color(user_id):

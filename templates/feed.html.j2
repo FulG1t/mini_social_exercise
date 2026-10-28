@@ -160,12 +160,12 @@
       {% endif %}
 
       <div class="d-flex justify-content-between mt-3">
-      <div class="d-flex align-items-center gap-2">
-        <a href="/posts/{{ entry.post.id }}" class="btn btn-sm btn-light show-comments-btn">
-          Show all comments
-        </a>
-        {{ share_button(entry.post.id, entry.post.content) }}
-      </div>
+        <div class="d-flex align-items-center gap-2">
+          <a href="/posts/{{ entry.post.id }}" class="btn btn-sm btn-light show-comments-btn">
+            Show all comments
+          </a>
+          {{ share_button(entry.post.id, entry.post.content) }}
+        </div>
         <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addCommentModal-{{ entry.post.id }}">Add Comment</button>
       </div>
     </div>
