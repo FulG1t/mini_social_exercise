@@ -1043,9 +1043,86 @@ def recommend(user_id, filter_following):
     - https://www.researchgate.net/publication/227268858_Recommender_Systems_Handbook
     """
 
-    recommended_posts = {} 
+    POSITIVE_REACTIONS = ('like', 'love', 'laugh', 'wow')
+    marks = ','.join('?' * len(POSITIVE_REACTIONS))
+    N_RECS = 5
+    CANDIDATE_LIMIT = 500
 
-    return recommended_posts;
+    followed_ids, author_likes, peer_scores = set(), collections.Counter(), collections.Counter()
+    seen_post_ids = set()
+
+    if user_id:
+
+        followed_ids = {r['followed_id'] for r in query_db(
+            'SELECT followed_id FROM follows WHERE follower_id = ?', (user_id,)) or []}
+        
+        for r in query_db(f'''
+            SELECT p.user_id AS author_id
+            FROM reactions r JOIN posts p ON r.post_id = p.id
+            WHERE r.user_id = ? AND r.reaction_type IN ({marks})
+        ''', (user_id, *POSITIVE_REACTIONS)) or []:
+            author_likes[r['author_id']] += 1
+
+        seen_post_ids = {r['post_id'] for r in query_db(
+            'SELECT post_id FROM reactions WHERE user_id = ?', (user_id,)) or []}
+
+        peers = {r['peer_id']: r['overlap'] for r in query_db(f'''
+            SELECT r2.user_id AS peer_id, COUNT(*) AS overlap
+            FROM reactions r1
+            JOIN reactions r2 ON r1.post_id = r2.post_id AND r2.user_id != r1.user_id
+            WHERE r1.user_id = ? AND r1.reaction_type IN ({marks})
+              AND r2.reaction_type IN ({marks})
+            GROUP BY r2.user_id
+        ''', (user_id, *POSITIVE_REACTIONS, *POSITIVE_REACTIONS)) or []}
+
+        if peers:
+            peer_marks = ','.join('?' * len(peers))
+            for r in query_db(f'''
+                SELECT user_id, post_id FROM reactions
+                WHERE user_id IN ({peer_marks}) AND reaction_type IN ({marks})
+            ''', (*peers.keys(), *POSITIVE_REACTIONS)) or []:
+                peer_scores[r['post_id']] += peers[r['user_id']] 
+
+    sql = '''
+        SELECT p.*, COALESCE(pop.cnt, 0) AS popularity
+        FROM posts p
+        LEFT JOIN (
+            SELECT post_id, COUNT(*) AS cnt FROM reactions
+            WHERE reaction_type IN ({m}) GROUP BY post_id
+        ) pop ON pop.post_id = p.id
+        WHERE 1=1
+    '''.format(m=marks)
+    params = list(POSITIVE_REACTIONS)
+
+    if user_id:
+        sql += ' AND p.user_id != ?'
+        params.append(user_id)
+    if filter_following:
+        if not followed_ids:
+            return []
+        sql += f" AND p.user_id IN ({','.join('?' * len(followed_ids))})"
+        params.extend(followed_ids)
+
+    sql += ' ORDER BY p.created_at DESC LIMIT ?'
+    params.append(CANDIDATE_LIMIT)
+
+    candidates = [dict(r) for r in query_db(sql, tuple(params)) or []
+                  if r['id'] not in seen_post_ids]
+    if not candidates:
+        return []
+
+    max_aff = max(author_likes.values(), default=0) or 1
+    max_peer = max(peer_scores.values(), default=0) or 1
+    max_pop = max((c['popularity'] for c in candidates), default=0) or 1
+
+    def score(c):
+        return (3.0 * author_likes[c['user_id']] / max_aff        
+              + 2.0 * peer_scores[c['id']] / max_peer             
+              + 1.0 * (c['user_id'] in followed_ids)              
+              + 0.5 * c['popularity'] / max_pop)                  
+
+    top = sorted(candidates, key=score, reverse=True)[:N_RECS]
+    return sorted(top, key=lambda c: c['created_at'], reverse=True)
 
 ACTIVITY_TYPES = ('posts', 'comments', 'reactions_given', 'reactions_received')
 
