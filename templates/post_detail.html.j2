@@ -1,6 +1,7 @@
 {% extends "base.html.j2" %}
 {% block content %}
 {% from "macros/user_macros.html.j2" import user_display %}
+{% from "macros/share_macros.html.j2" import share_button %}
 
 <div class="col-md-8 mx-auto pt-4">
   <div class="card shadow-sm">
@@ -61,6 +62,10 @@
           </ul>
         </div>
         {% endif %}
+
+        <div class="ms-auto">
+          {{ share_button(post.id, post.content) }}
+        </div>
       </div>
 
       <hr>

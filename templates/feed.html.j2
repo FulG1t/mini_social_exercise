@@ -1,6 +1,7 @@
 {% extends "base.html.j2" %}
 {% block content %}
 {% from "macros/user_macros.html.j2" import user_display %}
+{% from "macros/share_macros.html.j2" import share_button %}
 
 <div class="align-center text-center">
   <img src="{{ url_for('static', filename='icon.png') }}" alt="Logo" style="height: 64px;" class="mb-4">
@@ -159,9 +160,12 @@
       {% endif %}
 
       <div class="d-flex justify-content-between mt-3">
+      <div class="d-flex align-items-center gap-2">
         <a href="/posts/{{ entry.post.id }}" class="btn btn-sm btn-light show-comments-btn">
           Show all comments
         </a>
+        {{ share_button(entry.post.id, entry.post.content) }}
+      </div>
         <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addCommentModal-{{ entry.post.id }}">Add Comment</button>
       </div>
     </div>

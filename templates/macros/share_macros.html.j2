@@ -1,0 +1,31 @@
+{% macro share_button(post_id, content) %}
+  {% set url = url_for('post_detail', post_id=post_id, _external=True) %}
+  {% set text = (content or '')|truncate(100, True, '...') %}
+  {% set u = url|urlencode %}
+  {% set t = text|urlencode %}
+  <div class="dropdown d-inline-block">
+    <button class="btn btn-sm btn-light dropdown-toggle" type="button"
+            id="shareMenuButton-{{ post_id }}" data-bs-toggle="dropdown"
+            aria-expanded="false" title="Share this post">
+      Share
+    </button>
+    <ul class="dropdown-menu" aria-labelledby="shareMenuButton-{{ post_id }}">
+      <li><a class="dropdown-item" target="_blank" rel="noopener noreferrer"
+             href="https://www.facebook.com/sharer/sharer.php?u={{ u }}">Facebook</a></li>
+      <li><a class="dropdown-item" target="_blank" rel="noopener noreferrer"
+             href="https://x.com/intent/post?url={{ u }}&text={{ t }}">X (Twitter)</a></li>
+      <li><a class="dropdown-item" target="_blank" rel="noopener noreferrer"
+             href="https://www.linkedin.com/sharing/share-offsite/?url={{ u }}">LinkedIn</a></li>
+      <li><a class="dropdown-item" target="_blank" rel="noopener noreferrer"
+             href="https://wa.me/?text={{ (text ~ ' ' ~ url)|urlencode }}">WhatsApp</a></li>
+      <li><a class="dropdown-item" target="_blank" rel="noopener noreferrer"
+             href="https://www.reddit.com/submit?url={{ u }}&title={{ t }}">Reddit</a></li>
+      <li><a class="dropdown-item" target="_blank" rel="noopener noreferrer"
+             href="https://t.me/share/url?url={{ u }}&text={{ t }}">Telegram</a></li>
+      <li><a class="dropdown-item"
+             href="mailto:?subject={{ 'Check out this post on Mini Social'|urlencode }}&body={{ (text ~ ' ' ~ url)|urlencode }}">Email</a></li>
+      <li><hr class="dropdown-divider"></li>
+      <li><button type="button" class="dropdown-item" data-copy-link="{{ url }}">Copy link</button></li>
+    </ul>
+  </div>
+{% endmacro %}
