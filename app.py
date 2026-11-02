@@ -230,7 +230,190 @@ def add_post():
 
     # Redirect back to the main feed to see the new post
     return redirect(url_for('feed'))
-    
+
+def init_group_tables():
+    db = sqlite3.connect(DATABASE)
+    db.executescript('''
+        CREATE TABLE IF NOT EXISTS groups (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            description TEXT DEFAULT '',
+            created_by  INTEGER NOT NULL,
+            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS group_members (
+            group_id  INTEGER NOT NULL,
+            user_id   INTEGER NOT NULL,
+            joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+            PRIMARY KEY (group_id, user_id)
+        );
+    ''')
+    db.commit()
+    db.close()
+
+
+init_group_tables()
+
+
+def get_user_groups(user_id):
+    return query_db('''
+        SELECT g.id, g.name, gm.joined_at
+        FROM group_members gm
+        JOIN groups g ON g.id = gm.group_id
+        WHERE gm.user_id = ?
+        ORDER BY gm.joined_at ASC
+    ''', (user_id,)) or []
+
+
+@app.route('/groups')
+def group_list():
+    groups = query_db('''
+        SELECT g.id, g.name, g.description, g.created_at,
+               COUNT(gm.user_id) AS member_count
+        FROM groups g
+        LEFT JOIN group_members gm ON gm.group_id = g.id
+        GROUP BY g.id
+        ORDER BY member_count DESC, g.name COLLATE NOCASE ASC
+    ''') or []
+
+    my_group_ids = set()
+    current_user_id = session.get('user_id')
+    if current_user_id:
+        my_group_ids = {g['id'] for g in get_user_groups(current_user_id)}
+
+    return render_template('groups.html.j2', groups=groups, my_group_ids=my_group_ids,
+                           name_max=40,
+                           description_max=300)
+
+
+@app.route('/groups/new', methods=['POST'])
+def create_group():
+    user_id = session.get('user_id')
+    if not user_id:
+        flash("You must be logged in to create a group.", "danger")
+        return redirect(url_for('login'))
+
+    name = ' '.join(request.form.get('name', '').split())
+    description = request.form.get('description', '').strip()
+
+    if not name:
+        flash("Please give your group a name.", "warning")
+        return redirect(url_for('group_list'))
+    if len(name) > 40:
+        flash(f"Group names can be at most {40} characters long.", "warning")
+        return redirect(url_for('group_list'))
+    if len(description) > 300:
+        flash(f"Descriptions can be at most {300} characters long.", "warning")
+        return redirect(url_for('group_list'))
+
+    for text in (name, description):
+        if text and moderate_content(text)[0] != text:
+            flash("That group name or description isn't allowed. Please choose different wording.", "danger")
+            return redirect(url_for('group_list'))
+
+    db = get_db()
+    try:
+        cur = db.execute('INSERT INTO groups (name, description, created_by) VALUES (?, ?, ?)',
+                         (name, description, user_id))
+        group_id = cur.lastrowid
+        db.execute('INSERT INTO group_members (group_id, user_id) VALUES (?, ?)', (group_id, user_id))
+        db.commit()
+    except sqlite3.IntegrityError:
+        db.rollback()
+        flash(f"A group called \"{name}\" already exists. You can join it instead.", "info")
+        return redirect(url_for('group_list'))
+
+    flash(f"You created and joined \"{name}\".", "success")
+    return redirect(url_for('group_detail', group_id=group_id))
+
+
+@app.route('/groups/<int:group_id>')
+def group_detail(group_id):
+    """Shows a group: its description, its members and recent posts by its members."""
+    group = query_db('''
+        SELECT g.*, u.username AS creator_username
+        FROM groups g LEFT JOIN users u ON u.id = g.created_by
+        WHERE g.id = ?
+    ''', (group_id,), one=True)
+    if not group:
+        abort(404)
+
+    members = query_db('''
+        SELECT u.id, u.username, gm.joined_at
+        FROM group_members gm
+        JOIN users u ON u.id = gm.user_id
+        WHERE gm.group_id = ?
+        ORDER BY gm.joined_at ASC
+    ''', (group_id,)) or []
+
+    posts = []
+    for row in query_db('''
+        SELECT p.id, p.content, p.created_at, u.username
+        FROM posts p
+        JOIN group_members gm ON gm.user_id = p.user_id AND gm.group_id = ?
+        JOIN users u ON u.id = p.user_id
+        ORDER BY p.created_at DESC
+        LIMIT 20
+    ''', (group_id,)) or []:
+        post = dict(row)
+        post['content'], _ = moderate_content(post['content'])
+        posts.append(post)
+
+    current_user_id = session.get('user_id')
+    is_member = any(m['id'] == current_user_id for m in members)
+
+    return render_template('group_detail.html.j2', group=group, members=members,
+                           posts=posts, is_member=is_member)
+
+
+@app.route('/groups/<int:group_id>/join', methods=['POST'])
+def join_group(group_id):
+    """Adds the current user to a group."""
+    user_id = session.get('user_id')
+    if not user_id:
+        flash("You must be logged in to join a group.", "danger")
+        return redirect(url_for('login'))
+
+    group = query_db('SELECT id, name FROM groups WHERE id = ?', (group_id,), one=True)
+    if not group:
+        flash("That group does not exist.", "danger")
+        return redirect(url_for('group_list'))
+
+    db = get_db()
+    try:
+        db.execute('INSERT INTO group_members (group_id, user_id) VALUES (?, ?)', (group_id, user_id))
+        db.commit()
+        flash(f"Welcome to {group['name']}! It now appears on your profile.", "success")
+    except sqlite3.IntegrityError:
+        flash(f"You are already a member of {group['name']}.", "info")
+
+    return redirect(request.referrer or url_for('group_detail', group_id=group_id))
+
+
+@app.route('/groups/<int:group_id>/leave', methods=['POST'])
+def leave_group(group_id):
+    """Removes the current user from a group."""
+    user_id = session.get('user_id')
+    if not user_id:
+        flash("You must be logged in to leave a group.", "danger")
+        return redirect(url_for('login'))
+
+    group = query_db('SELECT id, name FROM groups WHERE id = ?', (group_id,), one=True)
+    if not group:
+        flash("That group does not exist.", "danger")
+        return redirect(url_for('group_list'))
+
+    db = get_db()
+    cur = db.execute('DELETE FROM group_members WHERE group_id = ? AND user_id = ?', (group_id, user_id))
+    db.commit()
+
+    if cur.rowcount > 0:
+        flash(f"You left {group['name']}.", "info")
+    else:
+        flash(f"You were not a member of {group['name']}.", "info")
+
+    return redirect(request.referrer or url_for('group_detail', group_id=group_id))
+
 @app.route('/posts/check', methods=['POST'])
 def check_post():
     if not session.get('user_id'):
@@ -333,7 +516,8 @@ def user_profile(username):
                            comments=comments,
                            followers_count=followers_count, 
                            following_count=following_count,
-                           is_following=is_currently_following)
+                           is_following=is_currently_following,
+                           groups=get_user_groups(user['id']))
     
 
 @app.route('/u/<username>/followers')
@@ -870,6 +1054,7 @@ def admin_delete_user(user_id):
         return redirect(url_for('admin_dashboard'))
     
     db = get_db()
+    db.execute('DELETE FROM group_members WHERE user_id = ?', (user_id,))
     db.execute('DELETE FROM users WHERE id = ?', (user_id,))
     db.commit()
     flash(f'User {user_id} and all their content has been deleted.', 'success')

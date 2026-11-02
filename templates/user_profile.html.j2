@@ -10,7 +10,19 @@
       <div class="col-md-12">
         <div class="card-body">
           <h2 class="card-title">{{ user_display(user.username) }}</h2>
-          {% if user.tag %}<span class="badge bg-secondary">{{ user.tag }}</span>{% endif %}
+                    <div class="mb-3">
+            <strong>Groups:</strong>
+            {% for g in groups %}
+              <a href="{{ url_for('group_detail', group_id=g.id) }}"
+                 class="badge bg-primary text-decoration-none me-1"
+                 title="Member since {{ g.joined_at|datetimeformat }}">{{ g.name }}</a>
+            {% else %}
+              <span class="text-muted">Not a member of any group yet.</span>
+            {% endfor %}
+            {% if session.user_id and session.user_id == user.id %}
+              <a href="{{ url_for('group_list') }}" class="btn btn-sm btn-outline-primary ms-2">Find or create groups</a>
+            {% endif %}
+          </div>
           <p class="card-text text-muted mb-3">
             <strong>Location:</strong> {{ user.location or "N/A" }}<br>
             <strong>Birthdate:</strong> {{ user.birthdate or "N/A" }}<br>
@@ -31,13 +43,6 @@
               {% endif %}
             </div>
           {% endif %}
-          {% if session.user_id and session.user_id == user.id %}
-              <form action="{{ url_for('change_tag', user_id=user.id) }}" method="POST" class="d-inline">
-              <input type="text" name="tag" value="{{ user.tag or '' }}"
-         maxlength="30" class="form-control" placeholder="Your tag">
-              <button type="submit" class="btn btn-primary">Change Tags</button>
-              </form>
-          {% endif %}  
           <div class="mt-4 d-flex">
             <div class="me-4">
               <a href="/u/{{ user.username }}/followers" class="text-decoration-none text-dark">

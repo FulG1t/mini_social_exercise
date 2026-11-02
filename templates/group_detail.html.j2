@@ -1,0 +1,70 @@
+{% extends "base.html.j2" %}
+{% block content %}
+{% from "macros/user_macros.html.j2" import user_display %}
+
+<div class="container mt-5">
+
+  <div class="card col-lg-8 mx-auto shadow-sm">
+    <div class="card-body">
+      <h2 class="card-title">{{ group.name }}</h2>
+      <p class="card-text">{{ group.description or "No description." }}</p>
+      <p class="card-text text-muted mb-3">
+        <strong>{{ members|length }}</strong> member{{ '' if members|length == 1 else 's' }}
+        &middot; Created {{ group.created_at|datetimeformat }}
+        {% if group.creator_username %}by {{ group.creator_username }}{% endif %}
+      </p>
+
+      {% if session.user_id %}
+        {% if is_member %}
+          <span class="badge bg-success me-2">You are a member</span>
+          <form action="{{ url_for('leave_group', group_id=group.id) }}" method="POST" class="d-inline">
+            <button type="submit" class="btn btn-outline-secondary btn-sm">Leave group</button>
+          </form>
+        {% else %}
+          <form action="{{ url_for('join_group', group_id=group.id) }}" method="POST" class="d-inline">
+            <button type="submit" class="btn btn-primary">Join group</button>
+          </form>
+        {% endif %}
+      {% else %}
+        <a href="{{ url_for('login') }}">Log in</a> to join this group.
+      {% endif %}
+      <a href="{{ url_for('group_list') }}" class="btn btn-link btn-sm">All groups</a>
+    </div>
+  </div>
+
+  <h3 class="text-center border-bottom pb-2 my-5"><span>Members</span></h3>
+  <div class="card col-lg-8 mx-auto shadow-sm">
+    <div class="card-body">
+      {% for m in members %}
+        <div class="mb-2">
+          {{ user_display(m.username) }}
+          <small class="text-muted ms-2">joined {{ m.joined_at|datetimeformat }}</small>
+        </div>
+      {% else %}
+        <p class="text-center text-muted mb-0">This group has no members yet.</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <h3 class="text-center border-bottom pb-2 my-5"><span>Recent Posts by Members</span></h3>
+  <div class="row g-3">
+    {% for post in posts %}
+    <div class="col-md-6">
+      <div class="card h-100 shadow-sm card-hover">
+        <a href="{{ url_for('post_detail', post_id=post.id) }}" class="text-decoration-none text-reset">
+          <div class="card-body">
+            <p class="card-text">{{ post.content|truncate(100, True, '...') }}</p>
+            <small class="text-muted">@{{ post.username }} &middot; {{ post.created_at|datetimeformat }}</small>
+          </div>
+        </a>
+      </div>
+    </div>
+    {% else %}
+    <div class="col-12">
+      <p class="text-center text-muted">No posts from members yet.</p>
+    </div>
+    {% endfor %}
+  </div>
+
+</div>
+{% endblock %}
